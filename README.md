@@ -30,8 +30,8 @@ git push -u origin main
 2. **Workers & Pages → Create application → Pages → Import an existing Git repository**.
 3. Připoj GitHub a vyber repozitář.
 4. Production branch: `main`.
-5. Build command: `exit 0`
-6. Build output directory: `public`
+5. Build command: `npm run build`
+6. Build output directory: `dist`
 7. Deploy.
 
 Cloudflare pak redeployne projekt po každém pushi do `main`.

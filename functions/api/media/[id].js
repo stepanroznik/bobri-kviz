@@ -1,2 +1,0 @@
-import { ensureDb, b64ToBytes } from '../../_lib.js';
-export async function onRequestGet({params,env}){try{await ensureDb(env);const row=await env.DB.prepare('SELECT name,mime,data,updated_at FROM media WHERE id=?').bind(params.id).first();if(!row)return new Response('Not found',{status:404});return new Response(b64ToBytes(row.data),{headers:{'content-type':row.mime,'cache-control':'public, max-age=31536000, immutable','content-disposition':`inline; filename="${String(row.name).replace(/"/g,'')}"`}})}catch(e){return new Response(e.message||'Media error',{status:500})}}
