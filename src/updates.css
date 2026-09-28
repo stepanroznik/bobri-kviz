@@ -1,5 +1,5 @@
 /* The Google-hosted Lato family includes Czech glyphs; Museo Slab remains the display face. */
-body { font-family: "Lato", "Segoe UI", sans-serif; }
+body { font-family: Arial, "Segoe UI", sans-serif; }
 .controls { display: grid; grid-template-columns: 42px 96px 42px 42px 72px; justify-items: stretch; }
 .control-btn { width: 100%; min-width: 0; }
 .control-btn--context, .control-placeholder { width: 96px; }
