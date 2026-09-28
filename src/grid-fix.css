@@ -1,0 +1,3 @@
+.question-row { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(var(--topic-count), minmax(420px, 1fr)); gap: 16px; align-items: stretch; }
+.question-row > .question-card { height: 100%; }
+@media (max-width: 900px) { .question-row { grid-template-columns: repeat(var(--topic-count), minmax(360px, 1fr)); } }

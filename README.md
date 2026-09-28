@@ -79,3 +79,8 @@ Admin umí také místo uploadu uložit externí URL obrázku/audia.
 ## Poznámka k fontu
 
 CSS preferuje lokálně nainstalovaný **Museo Sans / Museo Slab**. Pokud na zařízení nejsou, použije Lato + Roboto Slab z Google Fonts. Fonty Museo nejsou součástí repozitáře.
+
+
+## API
+
+Interaktivní Swagger dokumentace je po nasazení dostupná na `/api/docs`; OpenAPI 3.1 JSON je na `/api/openapi`. Čtení veřejného kvízu nevyžaduje klíč. Operace pod `/api/admin/*` používají hlavičku `X-Admin-Key` se stejnou hodnotou jako `ADMIN_KEY`.

@@ -4,61 +4,28 @@ import { activeQuestionCount, buildSlides, mediaUrl } from '../quiz';
 import type { Quiz, Slide } from '../types';
 
 const props = defineProps<{ quiz: Quiz; assetUrls: ReadonlyMap<string, string> }>();
-const slides = computed(() => buildSlides(props.quiz));
-const slideIndex = ref(0);
-const answerVisible = ref(false);
-const countdownLeft = ref(60);
+const slides = computed(() => buildSlides(props.quiz)); const slideIndex = ref(0); const answerVisible = ref(false); const countdownLeft = ref(60);
 let countdownTimer: ReturnType<typeof setInterval> | null = null;
-
+let audioContext: AudioContext | null = null;
 const currentSlide = computed<Slide>(() => slides.value[slideIndex.value]);
-const currentQuestionMediaUrl = computed(() => {
-  const slide = currentSlide.value;
-  if (slide.kind !== 'question') return '';
-  const originalUrl = mediaUrl(slide.question.media);
-  return props.assetUrls.get(originalUrl) ?? originalUrl;
-});
+const currentQuestionMediaUrl = computed(() => { const slide = currentSlide.value; if (slide.kind !== 'question') return ''; const original = mediaUrl(slide.question.media); return props.assetUrls.get(original) ?? original; });
 
+function activateAudio(): void { audioContext ??= new AudioContext(); void audioContext.resume(); }
+function playTone(frequency: number, duration: number, volume: number, delay = 0): void {
+  if (!audioContext || audioContext.state !== 'running') return;
+  const start = audioContext.currentTime + delay; const oscillator = audioContext.createOscillator(); const gain = audioContext.createGain();
+  oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(frequency, start); gain.gain.setValueAtTime(0.0001, start); gain.gain.exponentialRampToValueAtTime(volume, start + 0.008); gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  oscillator.connect(gain).connect(audioContext.destination); oscillator.start(start); oscillator.stop(start + duration + 0.01);
+}
+function playTick(): void { playTone(1_250, 0.045, 0.045); }
+function playAlarm(): void { [0, 0.22, 0.44].forEach((delay) => { playTone(880, 0.16, 0.12, delay); playTone(1_320, 0.16, 0.07, delay + 0.02); }); }
 function stopCountdown(): void { if (countdownTimer) clearInterval(countdownTimer); countdownTimer = null; }
 function resetCountdown(): void { stopCountdown(); countdownLeft.value = props.quiz.settings.countdownSeconds || 60; }
-function startCountdown(): void {
-  stopCountdown();
-  countdownTimer = setInterval(() => { countdownLeft.value = Math.max(0, countdownLeft.value - 1); if (countdownLeft.value <= 0) stopCountdown(); }, 1_000);
-}
-function navigate(delta: number): void {
-  stopCountdown();
-  slideIndex.value = Math.max(0, Math.min(slides.value.length - 1, slideIndex.value + delta));
-  answerVisible.value = false;
-  if (currentSlide.value.kind === 'countdown') { resetCountdown(); startCountdown(); }
-}
-function toggleAnswer(): void { answerVisible.value = !answerVisible.value; }
-function toggleCountdown(): void { if (countdownTimer) stopCountdown(); else startCountdown(); }
-function restartCountdown(): void { resetCountdown(); startCountdown(); }
-function toggleFullscreen(): void { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen(); }
-function handleKeydown(event: KeyboardEvent): void {
-  if (['INPUT', 'TEXTAREA', 'SELECT'].includes((document.activeElement as HTMLElement | null)?.tagName ?? '')) return;
-  if (event.key === 'ArrowRight' || event.key === 'PageDown') navigate(1);
-  if (event.key === 'ArrowLeft' || event.key === 'PageUp') navigate(-1);
-  if (event.code === 'Space') { event.preventDefault(); if (currentSlide.value.kind === 'question') toggleAnswer(); if (currentSlide.value.kind === 'countdown') toggleCountdown(); }
-  if ((event.key === 'r' || event.key === 'R') && currentSlide.value.kind === 'countdown') restartCountdown();
-  if (event.key === 'f' || event.key === 'F') toggleFullscreen();
-}
-onMounted(() => { resetCountdown(); window.addEventListener('keydown', handleKeydown); });
-onBeforeUnmount(() => { stopCountdown(); window.removeEventListener('keydown', handleKeydown); });
+function startCountdown(): void { activateAudio(); stopCountdown(); countdownTimer = setInterval(() => { countdownLeft.value = Math.max(0, countdownLeft.value - 1); if (countdownLeft.value <= 0) { playAlarm(); stopCountdown(); } else playTick(); }, 1_000); }
+function navigate(delta: number): void { stopCountdown(); slideIndex.value = Math.max(0, Math.min(slides.value.length - 1, slideIndex.value + delta)); answerVisible.value = false; if (currentSlide.value.kind === 'countdown') { resetCountdown(); startCountdown(); } }
+function toggleAnswer(): void { answerVisible.value = !answerVisible.value; } function toggleCountdown(): void { if (countdownTimer) stopCountdown(); else startCountdown(); } function restartCountdown(): void { resetCountdown(); startCountdown(); } function toggleFullscreen(): void { if (document.fullscreenElement) void document.exitFullscreen(); else void document.documentElement.requestFullscreen(); }
+function handleKeydown(event: KeyboardEvent): void { if (['INPUT','TEXTAREA','SELECT'].includes((document.activeElement as HTMLElement | null)?.tagName ?? '')) return; if (event.key === 'ArrowRight' || event.key === 'PageDown') navigate(1); if (event.key === 'ArrowLeft' || event.key === 'PageUp') navigate(-1); if (event.code === 'Space') { event.preventDefault(); if (currentSlide.value.kind === 'question') toggleAnswer(); if (currentSlide.value.kind === 'countdown') toggleCountdown(); } if ((event.key === 'r'||event.key === 'R') && currentSlide.value.kind === 'countdown') restartCountdown(); if (event.key === 'f'||event.key === 'F') toggleFullscreen(); }
+onMounted(() => { resetCountdown(); window.addEventListener('keydown', handleKeydown); }); onBeforeUnmount(() => { stopCountdown(); window.removeEventListener('keydown', handleKeydown); void audioContext?.close(); });
 </script>
 
-<template>
-  <main class="projector"><section class="slide">
-    <header class="slide-header"><div class="brand"><img src="/logo.svg" alt="" /><span>{{ quiz.title }}</span></div><div v-if="'round' in currentSlide" class="round-chip">{{ currentSlide.round.title }}</div></header>
-    <template v-if="currentSlide.kind === 'intro'"><div class="slide-body"><img class="intro-logo" src="/logo.svg" alt="" /><h1 class="intro-title">{{ quiz.title }}</h1><div class="intro-subtitle">{{ quiz.subtitle || '' }}</div></div></template>
-    <template v-else-if="currentSlide.kind === 'topic'"><div class="slide-body"><div class="topic-kicker">{{ currentSlide.round.title }} · téma {{ currentSlide.topicIndex + 1 }}</div><h1 class="topic-title">{{ currentSlide.topic.title }}</h1><div class="topic-subtitle">{{ currentSlide.topic.subtitle || '' }}</div></div></template>
-    <template v-else-if="currentSlide.kind === 'question'"><div class="slide-body">
-      <div class="question-topic">{{ currentSlide.topic.title }} · {{ currentSlide.questionIndex + 1 }}/{{ activeQuestionCount(currentSlide.topic) }}</div><div class="question-text">{{ currentSlide.question.prompt }}</div>
-      <div v-if="currentSlide.question.type === 'image' && currentQuestionMediaUrl" class="question-content"><img :src="currentQuestionMediaUrl" alt="Obrázek k otázce" /></div>
-      <div v-else-if="currentSlide.question.type === 'audio'" class="question-content"><div class="audio-card"><div class="audio-icon">♫</div><audio v-if="currentQuestionMediaUrl" controls preload="metadata" :src="currentQuestionMediaUrl" /><div v-else><strong>Hudební ukázka</strong><div class="tiny">Audio zatím není nahrané.</div></div></div></div>
-      <div v-if="currentSlide.question.mediaHint" class="media-hint">{{ currentSlide.question.mediaHint }}</div><div class="answer-overlay" :class="{ visible: answerVisible }"><div class="answer-label">Odpověď</div><div class="answer-text">{{ currentSlide.question.answer || '' }}</div><div v-if="currentSlide.question.notes" class="answer-notes">{{ currentSlide.question.notes }}</div></div>
-    </div></template>
-    <template v-else-if="currentSlide.kind === 'countdown'"><div class="slide-body"><div class="topic-kicker">{{ currentSlide.round.title }}</div><h1 class="countdown-title">Odevzdejte odpovědní lístky</h1><div class="countdown-value" :class="{ urgent: countdownLeft <= 10 }">{{ countdownLeft }}</div><div class="countdown-help">60 sekund · mezerník pauza/spuštění · R restart</div></div></template>
-    <template v-else><div class="slide-body"><img class="intro-logo" src="/logo.svg" alt="" /><h1 class="intro-title">Díky!</h1><div class="intro-subtitle">Bobří kvíz je u konce.</div></div></template>
-    <div class="controls"><button class="control-btn" title="Předchozí" @click="navigate(-1)">←</button><button v-if="currentSlide.kind === 'question'" class="control-btn control-btn--context" @click="toggleAnswer">Odpověď</button><button v-else-if="currentSlide.kind === 'countdown'" class="control-btn control-btn--context" @click="toggleCountdown">⏱</button><span v-else class="control-placeholder" aria-hidden="true"></span><button class="control-btn" title="Celá obrazovka" @click="toggleFullscreen">⛶</button><button class="control-btn" title="Další" @click="navigate(1)">→</button><span class="slide-counter">{{ slideIndex + 1 }}/{{ slides.length }}</span></div>
-  </section></main>
-</template>
+<template><main class="projector"><section class="slide"><header class="slide-header"><div class="brand"><img src="/logo.svg" alt="" /><span>{{ quiz.title }}</span></div><div v-if="'round' in currentSlide" class="round-chip">{{ currentSlide.round.title }}</div></header><template v-if="currentSlide.kind === 'intro'"><div class="slide-body"><img class="intro-logo" src="/logo.svg" alt="" /><h1 class="intro-title">{{ quiz.title }}</h1><div class="intro-subtitle">{{ quiz.subtitle || '' }}</div></div></template><template v-else-if="currentSlide.kind === 'topic'"><div class="slide-body"><div class="topic-kicker">{{ currentSlide.round.title }} · téma {{ currentSlide.topicIndex + 1 }}</div><h1 class="topic-title">{{ currentSlide.topic.title }}</h1><div class="topic-subtitle">{{ currentSlide.topic.subtitle || '' }}</div></div></template><template v-else-if="currentSlide.kind === 'question'"><div class="slide-body"><div class="question-topic">{{ currentSlide.topic.title }} · {{ currentSlide.questionIndex + 1 }}/{{ activeQuestionCount(currentSlide.topic) }}</div><div class="question-text">{{ currentSlide.question.prompt }}</div><div v-if="currentSlide.question.type === 'image' && currentQuestionMediaUrl" class="question-content"><img :src="currentQuestionMediaUrl" alt="Obrázek k otázce" /></div><div v-else-if="currentSlide.question.type === 'audio'" class="question-content"><div class="audio-card"><div class="audio-icon">♫</div><audio v-if="currentQuestionMediaUrl" controls preload="metadata" :src="currentQuestionMediaUrl" /><div v-else><strong>Hudební ukázka</strong><div class="tiny">Audio zatím není nahrané.</div></div></div></div><div v-if="currentSlide.question.mediaHint" class="media-hint">{{ currentSlide.question.mediaHint }}</div><div class="answer-overlay" :class="{ visible: answerVisible }"><div class="answer-label">Odpověď</div><div class="answer-text">{{ currentSlide.question.answer || '' }}</div><div v-if="currentSlide.question.notes" class="answer-notes">{{ currentSlide.question.notes }}</div></div></div></template><template v-else-if="currentSlide.kind === 'countdown'"><div class="slide-body"><div class="topic-kicker">{{ currentSlide.round.title }}</div><h1 class="countdown-title">Odevzdejte odpovědní lístky</h1><div class="countdown-value" :class="{ urgent: countdownLeft <= 10 }">{{ countdownLeft }}</div><div class="countdown-help">60 sekund · mezerník pauza/spuštění · R restart</div></div></template><template v-else><div class="slide-body"><img class="intro-logo" src="/logo.svg" alt="" /><h1 class="intro-title">Díky!</h1><div class="intro-subtitle">Bobří kvíz je u konce.</div></div></template><div class="controls"><button class="control-btn" title="Předchozí" @click="navigate(-1)">←</button><button v-if="currentSlide.kind === 'question'" class="control-btn control-btn--context" @click="toggleAnswer">Odpověď</button><button v-else-if="currentSlide.kind === 'countdown'" class="control-btn control-btn--context" @click="toggleCountdown">⏱</button><span v-else class="control-placeholder" aria-hidden="true"></span><button class="control-btn" title="Celá obrazovka" @click="toggleFullscreen">⛶</button><button class="control-btn" title="Další" @click="navigate(1)">→</button><span class="slide-counter">{{ slideIndex + 1 }}/{{ slides.length }}</span></div></section></main></template>
