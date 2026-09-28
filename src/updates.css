@@ -1,15 +1,15 @@
-/* The Google-hosted Lato family includes Czech glyphs; Museo Slab remains the display face. */
-body { font-family: Arial, "Segoe UI", sans-serif; }
-.controls { display: grid; grid-template-columns: 42px 96px 42px 42px 72px; justify-items: stretch; }
+/* The Google-hosted Nunito Sans family includes Czech glyphs; Museo Slab remains the display face. */
+body { font-family: "Nunito Sans", Arial, "Segoe UI", sans-serif; }
+.controls { display: grid; grid-template-columns: 42px 124px 42px 42px 72px; justify-items: stretch; }
 .control-btn { width: 100%; min-width: 0; }
-.control-btn--context, .control-placeholder { width: 96px; }
+.control-btn--context, .control-placeholder { width: 124px; }
 .slide-counter { min-width: 72px; text-align: center; }
 .asset-loader { min-height: 100vh; display: grid; place-content: center; justify-items: center; gap: 14px; padding: 32px; text-align: center; color: var(--navy); background: linear-gradient(145deg, #f9fdff, #e8f5fd); }
-.asset-loader__logo { width: 96px; height: 96px; border-radius: 50%; box-shadow: var(--shadow); }
+.asset-loader__logo { width: 124px; height: 96px; border-radius: 50%; box-shadow: var(--shadow); }
 .asset-loader__eyebrow { color: var(--sky2); font-weight: 900; text-transform: uppercase; letter-spacing: .14em; font-size: 12px; }
 .asset-loader h1 { margin: 0; font-family: "Museo Slab", "Roboto Slab", serif; font-size: clamp(28px, 5vw, 48px); }
 .asset-loader p { margin: 0; color: var(--muted); }
 .asset-loader__track { width: min(440px, 80vw); height: 10px; overflow: hidden; border-radius: 999px; background: #dcebf5; }
 .asset-loader__track div { height: 100%; border-radius: inherit; background: var(--sky2); transition: width .2s ease; }
 .asset-loader__warning { color: var(--warn) !important; }
-@media (max-width: 560px) { .controls { right: 8px; bottom: 10px; grid-template-columns: 38px 82px 38px 38px 58px; gap: 4px; } .control-btn { height: 38px; padding: 0 8px; } .control-btn--context, .control-placeholder { width: 82px; } .slide-counter { min-width: 58px; padding: 10px 4px; } }
+@media (max-width: 560px) { .controls { right: 8px; bottom: 10px; grid-template-columns: 38px 108px 38px 38px 58px; gap: 4px; } .control-btn { height: 38px; padding: 0 8px; } .control-btn--context, .control-placeholder { width: 108px; } .slide-counter { min-width: 58px; padding: 10px 4px; } }
