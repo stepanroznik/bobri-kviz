@@ -5,7 +5,7 @@ Jednoduchá webová aplikace se dvěma režimy:
 - **Projektor**: `/`
 - **Admin**: `/?admin=TVUJ_TAJNY_KLIC`
 
-Struktura je pevná: **5 kol × 2 témata × 5 otázek**. Před každým tématem je samostatný titulní slide a na konci každého kola samostatný 60s odpočet pro odevzdání odpovědních lístků.
+Struktura je volná: kola, témata i otázky lze v administraci přidávat a odebírat. Doporučená šablona je **2 témata × 5 otázek = 10 otázek na kolo**; administrace odlišnou strukturu pouze barevně označí. Před každým zapnutým tématem je samostatný titulní slide a na konci každého kola samostatný 60s odpočet pro odevzdání odpovědních lístků.
 
 ## Hosting
 
