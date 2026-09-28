@@ -13,3 +13,6 @@ body { font-family: "Nunito Sans", Arial, "Segoe UI", sans-serif; }
 .asset-loader__track div { height: 100%; border-radius: inherit; background: var(--sky2); transition: width .2s ease; }
 .asset-loader__warning { color: var(--warn) !important; }
 @media (max-width: 560px) { .controls { right: 8px; bottom: 10px; grid-template-columns: 38px 108px 38px 38px 58px; gap: 4px; } .control-btn { height: 38px; padding: 0 8px; } .control-btn--context, .control-placeholder { width: 108px; } .slide-counter { min-width: 58px; padding: 10px 4px; } }
+
+.brand--reset { border: 0; padding: 0; background: transparent; font: inherit; text-align: left; }
+.brand--reset:hover { opacity: .78; }
