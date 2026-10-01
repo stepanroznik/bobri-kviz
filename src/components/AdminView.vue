@@ -6,42 +6,292 @@ import type { Media, Quiz, Question, Round, Topic } from '../types';
 
 const props = defineProps<{ quiz: Quiz; adminKey: string }>();
 const emit = defineEmits<{ dirty: [value: boolean] }>();
-const saving = ref(false); const saved = ref(false); const dirty = ref(false);
+
+const saving = ref(false);
+const saved = ref(false);
+const dirty = ref(false);
+const expandedRounds = ref<Set<number>>(new Set());
+const expandedQuestions = ref<Set<string>>(new Set());
+
 const totalQuestions = computed(() => props.quiz.rounds.reduce((sum, round) => sum + questionCount(round), 0));
-const markDirty = (): void => { saved.value = false; dirty.value = true; emit('dirty', true); };
 const questionCount = (round: Round): number => round.topics.reduce((sum, topic) => sum + topic.questions.length, 0);
 const maxQuestionCount = (round: Round): number => Math.max(0, ...round.topics.map((topic) => topic.questions.length));
+const questionRows = (round: Round): Array<Array<Question | null>> =>
+  Array.from({ length: maxQuestionCount(round) }, (_, index) => round.topics.map((topic) => topic.questions[index] ?? null));
 const topicIsRecommended = (topic: Topic): boolean => topic.questions.length === 5;
+const roundIsRecommended = (round: Round): boolean => round.topics.length === 2 && questionCount(round) === 10;
 const mediaLabel = (media: Media): string => media.name || media.url || media.id || '';
-function addRound(): void { props.quiz.rounds.push(createRound(props.quiz.rounds.length + 1)); markDirty(); }
-function removeRound(index: number): void { props.quiz.rounds.splice(index, 1); markDirty(); }
+const questionTypeLabel = (type: Question['type']): string => ({ text: 'Text', image: 'Obrázek', audio: 'Audio' })[type];
+const roundTopicsLabel = (round: Round): string => round.topics.map((topic) => topic.title || 'Bez názvu').join(' · ') || 'Zatím bez témat';
+const boardMinWidth = (round: Round): string => `${Math.max(1, round.topics.length) * 340 + Math.max(0, round.topics.length - 1) * 10}px`;
+
+function markDirty(): void {
+  saved.value = false;
+  dirty.value = true;
+  emit('dirty', true);
+}
+
+function isRoundOpen(index: number): boolean { return expandedRounds.value.has(index); }
+function toggleRound(index: number): void {
+  const next = new Set(expandedRounds.value);
+  if (next.has(index)) next.delete(index);
+  else next.add(index);
+  expandedRounds.value = next;
+}
+function expandAllRounds(): void { expandedRounds.value = new Set(props.quiz.rounds.map((_, index) => index)); }
+function collapseAllRounds(): void { expandedRounds.value = new Set(); }
+
+function isQuestionOpen(question: Question): boolean { return expandedQuestions.value.has(question.id); }
+function toggleQuestion(question: Question): void {
+  const next = new Set(expandedQuestions.value);
+  if (next.has(question.id)) next.delete(question.id);
+  else next.add(question.id);
+  expandedQuestions.value = next;
+}
+function forgetQuestions(questions: Question[]): void {
+  const next = new Set(expandedQuestions.value);
+  questions.forEach((question) => next.delete(question.id));
+  expandedQuestions.value = next;
+}
+
+function addRound(): void {
+  const index = props.quiz.rounds.length;
+  props.quiz.rounds.push(createRound(index + 1));
+  expandedRounds.value = new Set([...expandedRounds.value, index]);
+  markDirty();
+}
+function removeRound(index: number): void {
+  const [removed] = props.quiz.rounds.splice(index, 1);
+  if (!removed) return;
+  forgetQuestions(removed.topics.flatMap((topic) => topic.questions));
+  expandedRounds.value = new Set([...expandedRounds.value].filter((value) => value !== index).map((value) => value > index ? value - 1 : value));
+  markDirty();
+}
 function addTopic(round: Round): void { round.topics.push(createTopic(round.topics.length + 1)); markDirty(); }
-function removeTopic(round: Round, index: number): void { round.topics.splice(index, 1); markDirty(); }
-function addQuestion(topic: Topic): void { topic.questions.push(createQuestion()); markDirty(); }
-function removeQuestion(topic: Topic, index: number): void { topic.questions.splice(index, 1); markDirty(); }
+function removeTopic(round: Round, index: number): void {
+  const [removed] = round.topics.splice(index, 1);
+  if (!removed) return;
+  forgetQuestions(removed.questions);
+  markDirty();
+}
+function addQuestion(topic: Topic): void {
+  const question = createQuestion();
+  topic.questions.push(question);
+  expandedQuestions.value = new Set([...expandedQuestions.value, question.id]);
+  markDirty();
+}
+function removeQuestion(topic: Topic, index: number): void {
+  const [removed] = topic.questions.splice(index, 1);
+  if (!removed) return;
+  forgetQuestions([removed]);
+  markDirty();
+}
 function addSource(question: Question): void { question.sources.push({ label: '', url: '' }); markDirty(); }
 function removeSource(question: Question, index: number): void { question.sources.splice(index, 1); markDirty(); }
-async function uploadMedia(file: File, question: Question): Promise<void> {
-  if (file.size > 1_300_000) throw new Error('Soubor je větší než 1,3 MB. Obrázek zmenši nebo audio zkrať / zkomprimuj.');
-  const id = createId();
-  await api(`/api/admin/media?id=${encodeURIComponent(id)}&name=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { 'X-Admin-Key': props.adminKey, 'Content-Type': file.type || 'application/octet-stream' }, body: file });
-  question.media = { kind: 'stored', id, name: file.name, mime: file.type }; markDirty();
+
+const MAX_MEDIA_BYTES = 1_300_000;
+const TARGET_IMAGE_BYTES = 1_200_000;
+async function imageAsJpeg(file: File, maxSide: number, quality: number): Promise<File> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Prohlížeč nemůže připravit obrázek k nahrání.');
+    context.fillStyle = 'white';
+    context.fillRect(0, 0, width, height);
+    context.drawImage(bitmap, 0, 0, width, height);
+    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((result) => result ? resolve(result) : reject(new Error('Komprese obrázku se nepodařila.')), 'image/jpeg', quality));
+    return new File([blob], `${file.name.replace(/\.[^.]+$/, '')}.jpg`, { type: 'image/jpeg' });
+  } finally {
+    bitmap.close();
+  }
 }
-async function handleUpload(event: Event, question: Question): Promise<void> { const file = (event.target as HTMLInputElement).files?.[0]; if (!file) return; try { await uploadMedia(file, question); } catch (error) { alert(error instanceof Error ? error.message : String(error)); } }
-function updateExternalMedia(event: Event, question: Question): void { const url = (event.target as HTMLInputElement).value.trim(); if (url) question.media = { kind: 'external', url, name: url }; else if (question.media?.kind === 'external') question.media = null; markDirty(); }
-async function removeMedia(question: Question): Promise<void> { const media = question.media; if (media?.kind === 'stored') { try { await api(`/api/admin/media?id=${encodeURIComponent(media.id ?? '')}`, { method: 'DELETE', headers: { 'X-Admin-Key': props.adminKey } }); } catch (error) { if (!confirm(`Médium se nepodařilo smazat na serveru (${error instanceof Error ? error.message : String(error)}). Odebrat ho aspoň z otázky?`)) return; } } question.media = null; markDirty(); }
-async function save(): Promise<void> { saving.value = true; try { await api('/api/admin/quiz', { method: 'POST', headers: { 'X-Admin-Key': props.adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify(props.quiz) }); dirty.value = false; emit('dirty', false); saved.value = true; window.setTimeout(() => { saved.value = false; saving.value = false; }, 900); } catch (error) { alert(error instanceof Error ? error.message : String(error)); saving.value = false; } }
+async function optimizeImage(file: File): Promise<File> {
+  if (!file.type.startsWith('image/') || file.size <= MAX_MEDIA_BYTES) return file;
+  let maxSide = 1_920;
+  let quality = 0.88;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const optimized = await imageAsJpeg(file, maxSide, quality);
+    if (optimized.size <= TARGET_IMAGE_BYTES) return optimized;
+    maxSide = Math.round(maxSide * 0.78);
+    quality = Math.max(0.55, quality - 0.08);
+  }
+  throw new Error('Obrázek se ani po zmenšení nevejde pod 1,3 MB. Zkus prosím menší soubor.');
+}
+async function uploadMedia(file: File, question: Question): Promise<void> {
+  const uploadFile = await optimizeImage(file);
+  if (uploadFile.size > MAX_MEDIA_BYTES) throw new Error('Soubor je větší než 1,3 MB. Obrázky se zmenšují automaticky; audio je potřeba zkrátit nebo zkomprimovat před nahráním.');
+  const id = createId();
+  await api(`/api/admin/media?id=${encodeURIComponent(id)}&name=${encodeURIComponent(uploadFile.name)}`, { method: 'POST', headers: { 'X-Admin-Key': props.adminKey, 'Content-Type': uploadFile.type || 'application/octet-stream' }, body: uploadFile });
+  question.media = { kind: 'stored', id, name: uploadFile.name, mime: uploadFile.type };
+  markDirty();
+}
+async function handleUpload(event: Event, question: Question): Promise<void> {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  try { await uploadMedia(file, question); }
+  catch (error) { alert(error instanceof Error ? error.message : String(error)); }
+}
+function updateExternalMedia(event: Event, question: Question): void {
+  const url = (event.target as HTMLInputElement).value.trim();
+  if (url) question.media = { kind: 'external', url, name: url };
+  else if (question.media?.kind === 'external') question.media = null;
+  markDirty();
+}
+async function removeMedia(question: Question): Promise<void> {
+  const media = question.media;
+  if (media?.kind === 'stored') {
+    try { await api(`/api/admin/media?id=${encodeURIComponent(media.id ?? '')}`, { method: 'DELETE', headers: { 'X-Admin-Key': props.adminKey } }); }
+    catch (error) {
+      if (!confirm(`Médium se nepodařilo smazat na serveru (${error instanceof Error ? error.message : String(error)}). Odebrat ho aspoň z otázky?`)) return;
+    }
+  }
+  question.media = null;
+  markDirty();
+}
+async function save(): Promise<void> {
+  saving.value = true;
+  try {
+    await api('/api/admin/quiz', { method: 'POST', headers: { 'X-Admin-Key': props.adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify(props.quiz) });
+    dirty.value = false;
+    emit('dirty', false);
+    saved.value = true;
+    window.setTimeout(() => { saved.value = false; saving.value = false; }, 900);
+  } catch (error) {
+    alert(error instanceof Error ? error.message : String(error));
+    saving.value = false;
+  }
+}
 </script>
 
 <template>
-  <div class="admin"><header class="admin-header"><div class="admin-brand"><img src="/logo.svg" alt="" /><div>Bobří kvíz · administrace</div></div><div class="admin-actions"><span class="save-status">{{ dirty ? 'Neuložené změny' : 'Uloženo' }}</span><a class="btn btn-secondary" href="/" target="_blank">Projektor ↗</a><button class="btn btn-primary" :disabled="saving" @click="save">{{ saving ? 'Ukládám…' : saved ? 'Uloženo ✓' : 'Uložit' }}</button></div></header>
-    <main class="admin-main"><section class="admin-intro"><div><span class="admin-kicker">Obsah kvízu</span><h1>{{ quiz.title || 'Bez názvu' }}</h1><p>V každém řádku jsou stejně očíslované otázky všech témat — nic se nerozjíždí.</p></div><div class="admin-summary"><strong>{{ quiz.rounds.length }}</strong><span>kol</span><strong>{{ totalQuestions }}</strong><span>otázek</span></div></section><div class="admin-title-grid"><div class="field"><label>Název</label><input v-model="quiz.title" @input="markDirty" /></div><div class="field"><label>Podtitulek</label><input v-model="quiz.subtitle" @input="markDirty" /></div></div>
-      <section v-for="(round, roundIndex) in quiz.rounds" :key="roundIndex" class="round-card"><header class="round-head"><div class="round-heading"><span class="round-number">Kolo {{ roundIndex + 1 }}</span><input v-model="round.title" class="round-title-input" aria-label="Název kola" @input="markDirty" /></div><div class="round-meta"><span class="count-status" :class="{ 'count-status--ok': round.topics.length === 2 }">{{ round.topics.length }} / 2 témata</span><span class="count-status" :class="{ 'count-status--ok': questionCount(round) === 10 }">{{ questionCount(round) }} / 10 otázek</span><button class="icon-btn" title="Odebrat kolo" @click="removeRound(roundIndex)">×</button></div></header>
-        <div v-if="round.topics.length !== 2 || questionCount(round) !== 10" class="structure-warning">Doporučení: 2 témata a 10 otázek na kolo. Kvíz lze uložit i s jinou strukturou.</div>
-        <div class="round-board-scroll"><div class="round-board" :style="{ '--topic-count': Math.max(1, round.topics.length) }">
-          <section v-for="(topic, topicIndex) in round.topics" :key="`topic-${topicIndex}`" class="topic-column"><header class="topic-head"><div><span class="topic-number">Téma {{ topicIndex + 1 }}</span><span class="count-status" :class="{ 'count-status--ok': topicIsRecommended(topic) }">{{ topic.questions.length }} / 5 otázek</span></div><div><label class="toggle"><input v-model="topic.enabled" type="checkbox" @change="markDirty" /> zapnuto</label><button class="icon-btn" title="Odebrat téma" @click="removeTopic(round, topicIndex)">×</button></div></header><div class="field"><label>Název tématu</label><input v-model="topic.title" @input="markDirty" /></div><div class="field"><label>Podtitulek</label><input v-model="topic.subtitle" @input="markDirty" /></div></section>
-          <div v-for="questionIndex in maxQuestionCount(round)" :key="`row-`" class="question-row" :style="{ '--topic-count': Math.max(1, round.topics.length) }"><template v-for="(topic, topicIndex) in round.topics" :key="`question-${questionIndex}-${topicIndex}`"><article v-if="topic.questions[questionIndex - 1]" class="question-card"><header class="question-head"><strong>Otázka {{ questionIndex }}</strong><button class="text-btn text-btn--danger" @click="removeQuestion(topic, questionIndex - 1)">Odebrat</button></header><div class="question-edit-grid"><div class="field"><label>Zapnuto</label><select v-model="topic.questions[questionIndex - 1].enabled" @change="markDirty"><option :value="true">Ano</option><option :value="false">Ne</option></select></div><div class="field"><label>Typ</label><select v-model="topic.questions[questionIndex - 1].type" @change="markDirty"><option value="text">Text</option><option value="image">Obrázek</option><option value="audio">Audio</option></select></div><div class="field field--wide"><label>Otázka</label><textarea v-model="topic.questions[questionIndex - 1].prompt" @input="markDirty" /></div><div class="field field--wide"><label>Odpověď</label><input v-model="topic.questions[questionIndex - 1].answer" @input="markDirty" /></div><div class="field"><label>Poznámka pro moderátora</label><textarea v-model="topic.questions[questionIndex - 1].notes" @input="markDirty" /></div><div class="field"><label>Nápověda k médiu / co pustit</label><textarea v-model="topic.questions[questionIndex - 1].mediaHint" @input="markDirty" /></div><div class="field field--wide"><label>Médium</label><div class="media-row"><template v-if="topic.questions[questionIndex - 1].media"><span class="media-pill">{{ topic.questions[questionIndex - 1].media?.kind === 'stored' ? 'Nahráno' : 'URL' }}: <span>{{ mediaLabel(topic.questions[questionIndex - 1].media!) }}</span></span><button class="btn btn-danger" @click="removeMedia(topic.questions[questionIndex - 1])">Odebrat</button></template><input type="file" accept="image/*,audio/*" @change="handleUpload($event, topic.questions[questionIndex - 1])" /><input placeholder="nebo URL obrázku/audia" :value="topic.questions[questionIndex - 1].media?.kind === 'external' ? topic.questions[questionIndex - 1].media?.url : ''" @change="updateExternalMedia($event, topic.questions[questionIndex - 1])" /></div></div><div class="field field--wide"><label>Zdroje</label><div v-for="(source, sourceIndex) in topic.questions[questionIndex - 1].sources" :key="sourceIndex" class="source-row"><input v-model="source.label" placeholder="Název zdroje" @input="markDirty" /><input v-model="source.url" placeholder="https://…" @input="markDirty" /><button @click="removeSource(topic.questions[questionIndex - 1], sourceIndex)">×</button></div><button class="add-source" @click="addSource(topic.questions[questionIndex - 1])">+ zdroj</button></div></div></article><article v-else class="question-card question-card--empty"><span>Otázka {{ questionIndex }} zatím chybí</span></article></template></div>
-          <button v-for="(topic, topicIndex) in round.topics" :key="`add-${topicIndex}`" class="add-content-btn" @click="addQuestion(topic)">+ Přidat otázku</button>
-        </div></div><button class="add-content-btn add-content-btn--round" @click="addTopic(round)">+ Přidat téma</button></section><button class="add-round-btn" @click="addRound">+ Přidat kolo</button>
-    </main></div>
+  <div class="admin">
+    <header class="admin-header">
+      <div class="admin-brand"><img src="/logo.svg" alt="" /><span>Bobří kvíz · administrace</span></div>
+      <div class="admin-actions">
+        <span class="save-status" :class="{ 'save-status--dirty': dirty }">{{ dirty ? 'Neuložené změny' : 'Uloženo' }}</span>
+        <a class="btn btn-secondary" href="/" target="_blank">Projektor ↗</a>
+        <button class="btn btn-primary" type="button" :disabled="saving" @click="save">{{ saving ? 'Ukládám…' : saved ? 'Uloženo ✓' : 'Uložit' }}</button>
+      </div>
+    </header>
+
+    <main class="admin-main">
+      <section class="admin-overview">
+        <div>
+          <span class="admin-kicker">Obsah kvízu</span>
+          <h1>{{ quiz.title || 'Bez názvu' }}</h1>
+        </div>
+        <div class="admin-summary"><strong>{{ quiz.rounds.length }}</strong> kol <span aria-hidden="true">·</span> <strong>{{ totalQuestions }}</strong> otázek</div>
+      </section>
+
+      <details class="admin-settings">
+        <summary><span>Nastavení kvízu</span><small>Název a podtitulek</small></summary>
+        <div class="admin-title-grid">
+          <div class="field"><label for="quiz-title">Název</label><input id="quiz-title" v-model="quiz.title" @input="markDirty" /></div>
+          <div class="field"><label for="quiz-subtitle">Podtitulek</label><input id="quiz-subtitle" v-model="quiz.subtitle" @input="markDirty" /></div>
+        </div>
+      </details>
+
+      <div class="round-list-head">
+        <h2>Kola</h2>
+        <div class="round-list-actions">
+          <button class="text-btn" type="button" @click="expandAllRounds">Rozbalit vše</button>
+          <button class="text-btn" type="button" @click="collapseAllRounds">Sbalit vše</button>
+        </div>
+      </div>
+
+      <section v-for="(round, roundIndex) in quiz.rounds" :key="roundIndex" class="round-card" :class="{ 'round-card--open': isRoundOpen(roundIndex) }">
+        <header class="round-head">
+          <button class="round-toggle" type="button" :aria-expanded="isRoundOpen(roundIndex)" :aria-controls="`round-panel-${roundIndex}`" @click="toggleRound(roundIndex)">
+            <span class="round-chevron" aria-hidden="true">›</span>
+            <span class="round-number">{{ roundIndex + 1 }}.</span>
+            <span class="round-heading"><strong>{{ round.title || 'Kolo bez názvu' }}</strong><small>{{ roundTopicsLabel(round) }}</small></span>
+          </button>
+          <div class="round-meta">
+            <span class="count-status" :class="{ 'count-status--ok': round.topics.length === 2 }">{{ round.topics.length }} / 2 témata</span>
+            <span class="count-status" :class="{ 'count-status--ok': questionCount(round) === 10 }">{{ questionCount(round) }} / 10 otázek</span>
+          </div>
+        </header>
+
+        <div v-if="isRoundOpen(roundIndex)" :id="`round-panel-${roundIndex}`" class="round-panel">
+          <div class="round-toolbar">
+            <div class="field"><label :for="`round-title-${roundIndex}`">Název kola</label><input :id="`round-title-${roundIndex}`" v-model="round.title" @input="markDirty" /></div>
+            <button class="text-btn text-btn--danger" type="button" @click="removeRound(roundIndex)">Odebrat kolo</button>
+          </div>
+          <p v-if="!roundIsRecommended(round)" class="structure-warning">Doporučení: 2 témata po 5 otázkách. Odlišný počet lze bez omezení uložit.</p>
+
+          <div class="round-board-scroll">
+            <div class="round-board" :style="{ '--topic-count': Math.max(1, round.topics.length), minWidth: boardMinWidth(round) }">
+              <section v-for="(topic, topicIndex) in round.topics" :key="`topic-${topicIndex}`" class="topic-column">
+                <header class="topic-head">
+                  <span class="topic-number">Téma {{ topicIndex + 1 }}</span>
+                  <span class="count-status" :class="{ 'count-status--ok': topicIsRecommended(topic) }">{{ topic.questions.length }} / 5 otázek</span>
+                </header>
+                <div class="field"><label :for="`topic-title-${roundIndex}-${topicIndex}`">Název tématu</label><input :id="`topic-title-${roundIndex}-${topicIndex}`" v-model="topic.title" @input="markDirty" /></div>
+                <div class="field"><label :for="`topic-subtitle-${roundIndex}-${topicIndex}`">Podtitulek</label><input :id="`topic-subtitle-${roundIndex}-${topicIndex}`" v-model="topic.subtitle" @input="markDirty" /></div>
+                <div class="topic-actions">
+                  <label class="toggle"><input v-model="topic.enabled" type="checkbox" @change="markDirty" /> Zapnuto</label>
+                  <button class="text-btn text-btn--danger" type="button" @click="removeTopic(round, topicIndex)">Odebrat téma</button>
+                </div>
+              </section>
+
+              <div v-for="(row, rowIndex) in questionRows(round)" :key="`row-${rowIndex}`" class="question-row" :style="{ '--topic-count': Math.max(1, round.topics.length) }">
+                <template v-for="(question, topicIndex) in row" :key="question?.id ?? `missing-${topicIndex}`">
+                  <article v-if="question" class="question-card" :class="{ 'question-card--disabled': !question.enabled, 'question-card--open': isQuestionOpen(question) }">
+                    <button class="question-toggle" type="button" :aria-expanded="isQuestionOpen(question)" @click="toggleQuestion(question)">
+                      <span class="question-number">{{ rowIndex + 1 }}</span>
+                      <span class="question-preview"><strong>{{ question.prompt.trim() || 'Otázka bez zadání' }}</strong><small>{{ question.answer.trim() ? `Odpověď: ${question.answer}` : 'Odpověď není vyplněná' }}</small></span>
+                      <span class="question-badges"><span v-if="!question.enabled" class="question-badge question-badge--off">Vypnuto</span><span v-if="question.media" class="question-badge">Médium</span><span class="question-badge">{{ questionTypeLabel(question.type) }}</span></span>
+                      <span class="question-chevron" aria-hidden="true">›</span>
+                    </button>
+
+                    <div v-if="isQuestionOpen(question)" class="question-body">
+                      <div class="question-edit-grid">
+                        <div class="field"><label>Typ</label><select v-model="question.type" @change="markDirty"><option value="text">Text</option><option value="image">Obrázek</option><option value="audio">Audio</option></select></div>
+                        <div class="field"><label>Zapnuto</label><select v-model="question.enabled" @change="markDirty"><option :value="true">Ano</option><option :value="false">Ne</option></select></div>
+                        <div class="field field--wide"><label>Otázka</label><textarea v-model="question.prompt" rows="2" @input="markDirty" /></div>
+                        <div class="field field--wide"><label>Odpověď</label><input v-model="question.answer" @input="markDirty" /></div>
+                      </div>
+
+                      <details class="question-more">
+                        <summary>Další nastavení <span>{{ question.media ? 'Médium · ' : '' }}{{ question.sources.length }} zdrojů</span></summary>
+                        <div class="question-more-body">
+                          <div class="field"><label>Poznámka pro moderátora</label><textarea v-model="question.notes" rows="2" @input="markDirty" /></div>
+                          <div class="field"><label>Nápověda k médiu / co pustit</label><textarea v-model="question.mediaHint" rows="2" @input="markDirty" /></div>
+                          <div class="field"><label>Médium</label>
+                            <div class="media-row">
+                              <template v-if="question.media"><span class="media-pill">{{ question.media.kind === 'stored' ? 'Nahráno' : 'URL' }}: <span>{{ mediaLabel(question.media) }}</span></span><button class="btn btn-danger" type="button" @click="removeMedia(question)">Odebrat</button></template>
+                              <input type="file" accept="image/*,audio/*" @change="handleUpload($event, question)" />
+                              <input placeholder="nebo URL obrázku/audia" :value="question.media?.kind === 'external' ? question.media.url : ''" @change="updateExternalMedia($event, question)" />
+                            </div>
+                            <div class="tiny">Obrázky nad 1,3 MB se automaticky zmenší. Audio musí limit splnit při výběru.</div>
+                          </div>
+                          <div class="field"><label>Zdroje</label>
+                            <div v-for="(source, sourceIndex) in question.sources" :key="sourceIndex" class="source-row"><input v-model="source.label" placeholder="Název zdroje" @input="markDirty" /><input v-model="source.url" placeholder="https://…" @input="markDirty" /><button type="button" title="Odebrat zdroj" @click="removeSource(question, sourceIndex)">×</button></div>
+                            <button class="add-source" type="button" @click="addSource(question)">+ Přidat zdroj</button>
+                          </div>
+                        </div>
+                      </details>
+                      <div class="question-footer"><button class="text-btn text-btn--danger" type="button" @click="removeQuestion(round.topics[topicIndex], rowIndex)">Odebrat otázku</button></div>
+                    </div>
+                  </article>
+                  <button v-else class="question-card question-card--empty" type="button" @click="addQuestion(round.topics[topicIndex])">+ Přidat otázku {{ rowIndex + 1 }}</button>
+                </template>
+              </div>
+
+              <button v-for="(topic, topicIndex) in round.topics" :key="`add-${topicIndex}`" class="add-content-btn" type="button" @click="addQuestion(topic)">+ Přidat otázku do tématu {{ topicIndex + 1 }}</button>
+            </div>
+          </div>
+          <button class="add-content-btn add-content-btn--round" type="button" @click="addTopic(round)">+ Přidat téma</button>
+        </div>
+      </section>
+
+      <button class="add-round-btn" type="button" @click="addRound">+ Přidat kolo</button>
+    </main>
+  </div>
 </template>
