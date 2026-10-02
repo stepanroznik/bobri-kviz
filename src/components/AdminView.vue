@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, shallowRef, watch } from 'vue';
 import { api } from '../api';
+import { audioClipError } from '../audioClip';
+import AudioClipEditor from './AudioClipEditor.vue';
 import { createId, createQuestion, createRound, createTopic } from '../quiz';
 import { moveQuestion, moveTopic } from '../quizEditing';
 import type { Media, Quiz, Question, Round, Topic } from '../types';
@@ -196,6 +198,8 @@ async function uploadMedia(file: File, question: Question): Promise<void> {
   const id = createId();
   await api(`/api/admin/media?id=${encodeURIComponent(id)}&name=${encodeURIComponent(uploadFile.name)}`, { method: 'POST', headers: { 'X-Admin-Key': props.adminKey, 'Content-Type': uploadFile.type || 'application/octet-stream' }, body: uploadFile });
   question.media = { kind: 'stored', id, name: uploadFile.name, mime: uploadFile.type };
+  delete question.audioStart;
+  delete question.audioEnd;
   markDirty();
 }
 async function handleUpload(event: Event, question: Question): Promise<void> {
@@ -208,6 +212,8 @@ function updateExternalMedia(event: Event, question: Question): void {
   const url = (event.target as HTMLInputElement).value.trim();
   if (url) question.media = { kind: 'external', url, name: url };
   else if (question.media?.kind === 'external') question.media = null;
+  delete question.audioStart;
+  delete question.audioEnd;
   markDirty();
 }
 async function removeMedia(question: Question): Promise<void> {
@@ -219,9 +225,17 @@ async function removeMedia(question: Question): Promise<void> {
     }
   }
   question.media = null;
+  delete question.audioStart;
+  delete question.audioEnd;
   markDirty();
 }
 async function save(): Promise<void> {
+  for (const round of props.quiz.rounds) for (const topic of round.topics) for (const question of topic.questions) {
+    if (question.type === 'audio' && question.media && audioClipError(question)) {
+      alert(`${round.title} / ${topic.title}: ${audioClipError(question)}`);
+      return;
+    }
+  }
   saving.value = true;
   try {
     await api('/api/admin/quiz', { method: 'POST', headers: { 'X-Admin-Key': props.adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify(props.quiz) });
@@ -326,6 +340,8 @@ async function save(): Promise<void> {
                         <div class="field field--wide"><label>Otázka</label><textarea v-model="question.prompt" rows="2" @input="markDirty" /></div>
                         <div class="field field--wide"><label>Odpověď</label><textarea v-model="question.answer" rows="2" @input="markDirty" /></div>
                       </div>
+
+                      <AudioClipEditor v-if="question.type === 'audio' && question.media" :question="question" @dirty="markDirty" />
 
                       <details class="question-more">
                         <summary>Další nastavení <span>{{ question.media ? 'Médium · ' : '' }}{{ question.sources.length }} zdrojů</span></summary>

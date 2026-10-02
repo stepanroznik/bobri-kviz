@@ -38,7 +38,7 @@ export async function onRequestGet({ request }: { request: Request }): Promise<R
         Quiz: quizSchema,
         Round: { type: 'object', required: ['title', 'topics'], properties: { title: { type: 'string' }, topics: { type: 'array', items: { $ref: '#/components/schemas/Topic' } } } },
         Topic: { type: 'object', required: ['title', 'questions'], properties: { title: { type: 'string' }, subtitle: { type: 'string' }, enabled: { type: 'boolean' }, questions: { type: 'array', items: { $ref: '#/components/schemas/Question' } } } },
-        Question: { type: 'object', properties: { id: { type: 'string' }, enabled: { type: 'boolean' }, type: { type: 'string', enum: ['text', 'image', 'audio'] }, prompt: { type: 'string' }, answer: { type: 'string' }, notes: { type: 'string' }, mediaHint: { type: 'string' } } },
+        Question: { type: 'object', properties: { id: { type: 'string' }, enabled: { type: 'boolean' }, type: { type: 'string', enum: ['text', 'image', 'audio'] }, prompt: { type: 'string' }, answer: { type: 'string' }, notes: { type: 'string' }, mediaHint: { type: 'string' }, audioStart: { type: 'number', minimum: 0, description: 'Začátek audio ukázky v sekundách; výchozí 0.' }, audioEnd: { type: 'number', minimum: 0, description: 'Konec audio ukázky v sekundách; musí být později než začátek. Vynechání znamená konec nahrávky.' } } },
       },
     },
   });

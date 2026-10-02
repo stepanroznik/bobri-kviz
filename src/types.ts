@@ -23,6 +23,9 @@ export interface Question {
   sources: Source[];
   media: Media | null;
   mediaHint: string;
+  /** Non-destructive playback range in seconds; omitted end means the whole remainder. */
+  audioStart?: number;
+  audioEnd?: number;
 }
 
 export interface Topic {

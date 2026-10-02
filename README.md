@@ -71,6 +71,8 @@ Kvůli nulovým nákladům a nulové kartě ukládá aplikace krátká média p�
 
 Admin umí také místo uploadu uložit externí URL obrázku/audia.
 
+U audio otázky lze v rozbaleném editoru nastavit začátek a konec přehrávaného úseku v sekundách, případně je převzít z aktuální pozice přehrávače. Náhled standardně dovoluje procházet celou nahrávku; volba **Přehrát jen vybraný úsek** ověří ořez. Projektor přehrává pouze uložený úsek a na jeho konci se zastaví. Ořez je nedestruktivní: celý soubor zůstává uložený i předstažený pro offline použití. Prázdný začátek znamená 0, prázdný konec znamená konec souboru. API používá volitelná pole `audioStart` a `audioEnd` na otázce.
+
 ## Ovládání projektoru
 
 - `←` / `→`: předchozí / další slide
