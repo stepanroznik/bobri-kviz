@@ -235,25 +235,23 @@ async function save(): Promise<void> {
                 <div class="field"><label :for="`topic-title-${roundIndex}-${topicIndex}`">Název tématu</label><input :id="`topic-title-${roundIndex}-${topicIndex}`" v-model="topic.title" @input="markDirty" /></div>
                 <div class="field"><label :for="`topic-subtitle-${roundIndex}-${topicIndex}`">Podtitulek</label><input :id="`topic-subtitle-${roundIndex}-${topicIndex}`" v-model="topic.subtitle" @input="markDirty" /></div>
                 <div class="topic-actions">
-                  <label class="toggle"><input v-model="topic.enabled" type="checkbox" @change="markDirty" /> Zapnuto</label>
                   <button class="text-btn text-btn--danger" type="button" @click="removeTopic(round, topicIndex)">Odebrat téma</button>
                 </div>
               </section>
 
               <div v-for="(row, rowIndex) in questionRows(round)" :key="`row-${rowIndex}`" class="question-row" :style="{ '--topic-count': Math.max(1, round.topics.length) }">
                 <template v-for="(question, topicIndex) in row" :key="question?.id ?? `missing-${topicIndex}`">
-                  <article v-if="question" class="question-card" :class="{ 'question-card--disabled': !question.enabled, 'question-card--open': isQuestionOpen(question) }">
+                  <article v-if="question" class="question-card" :class="{ 'question-card--open': isQuestionOpen(question) }">
                     <button class="question-toggle" type="button" :aria-expanded="isQuestionOpen(question)" @click="toggleQuestion(question)">
                       <span class="question-number">{{ rowIndex + 1 }}</span>
                       <span class="question-preview"><strong>{{ question.prompt.trim() || 'Otázka bez zadání' }}</strong><small>{{ question.answer.trim() ? `Odpověď: ${question.answer}` : 'Odpověď není vyplněná' }}</small></span>
-                      <span class="question-badges"><span v-if="!question.enabled" class="question-badge question-badge--off">Vypnuto</span><span v-if="question.media" class="question-badge">Médium</span><span class="question-badge">{{ questionTypeLabel(question.type) }}</span></span>
+                      <span class="question-badges"><span v-if="question.media" class="question-badge">Médium</span><span class="question-badge">{{ questionTypeLabel(question.type) }}</span></span>
                       <span class="question-chevron" aria-hidden="true">›</span>
                     </button>
 
                     <div v-if="isQuestionOpen(question)" class="question-body">
                       <div class="question-edit-grid">
-                        <div class="field"><label>Typ</label><select v-model="question.type" @change="markDirty"><option value="text">Text</option><option value="image">Obrázek</option><option value="audio">Audio</option></select></div>
-                        <div class="field"><label>Zapnuto</label><select v-model="question.enabled" @change="markDirty"><option :value="true">Ano</option><option :value="false">Ne</option></select></div>
+                        <div class="field field--wide"><label>Typ</label><select v-model="question.type" @change="markDirty"><option value="text">Text</option><option value="image">Obrázek</option><option value="audio">Audio</option></select></div>
                         <div class="field field--wide"><label>Otázka</label><textarea v-model="question.prompt" rows="2" @input="markDirty" /></div>
                         <div class="field field--wide"><label>Odpověď</label><input v-model="question.answer" @input="markDirty" /></div>
                       </div>

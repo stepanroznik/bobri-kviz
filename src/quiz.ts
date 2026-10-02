@@ -53,9 +53,8 @@ export function buildSlides(quiz: Quiz): Slide[] {
   const slides: Slide[] = [{ kind: 'intro' }];
   quiz.rounds.forEach((round, roundIndex) => {
     round.topics.forEach((topic, topicIndex) => {
-      if (!topic.enabled) return;
       slides.push({ kind: 'topic', round, roundIndex, topic, topicIndex });
-      topic.questions.filter((question) => question.enabled && question.prompt.trim()).forEach((question, questionIndex) => {
+      topic.questions.filter((question) => question.prompt.trim()).forEach((question, questionIndex) => {
         slides.push({ kind: 'question', round, roundIndex, topic, topicIndex, question, questionIndex });
       });
     });
@@ -66,7 +65,7 @@ export function buildSlides(quiz: Quiz): Slide[] {
 }
 
 export function activeQuestionCount(topic: Topic): number {
-  return topic.questions.filter((question) => question.enabled && question.prompt.trim()).length;
+  return topic.questions.filter((question) => question.prompt.trim()).length;
 }
 
 export function mediaUrl(media: Question['media']): string {
