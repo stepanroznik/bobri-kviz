@@ -69,8 +69,8 @@ export function activeQuestionCount(topic: Topic): number {
 }
 
 /** Normalizes pasted line endings for display without changing the stored text. */
-export function formatQuestionPrompt(prompt: string): string {
-  return prompt.replace(/\r\n|[\r\v\f\u0085\u2028\u2029]/g, '\n');
+export function formatPresentationText(text: string): string {
+  return text.replace(/\r\n|[\r\v\f\u0085\u2028\u2029]/g, '\n');
 }
 
 export function mediaUrl(media: Question['media']): string {

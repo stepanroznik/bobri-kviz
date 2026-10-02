@@ -324,7 +324,7 @@ async function save(): Promise<void> {
                       <div class="question-edit-grid">
                         <div class="field field--wide"><label>Typ</label><select v-model="question.type" @change="markDirty"><option value="text">Text</option><option value="image">Obrázek</option><option value="audio">Audio</option></select></div>
                         <div class="field field--wide"><label>Otázka</label><textarea v-model="question.prompt" rows="2" @input="markDirty" /></div>
-                        <div class="field field--wide"><label>Odpověď</label><input v-model="question.answer" @input="markDirty" /></div>
+                        <div class="field field--wide"><label>Odpověď</label><textarea v-model="question.answer" rows="2" @input="markDirty" /></div>
                       </div>
 
                       <details class="question-more">

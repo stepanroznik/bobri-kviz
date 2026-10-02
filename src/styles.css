@@ -150,6 +150,9 @@ button {
   margin: 0 0 24px;
   letter-spacing: 0.012em;
 }
+.slide-body--question > :not(.answer-overlay) {
+  flex-shrink: 0;
+}
 .question-content {
   width: min(1150px, 86vw);
   max-height: 46vh;
@@ -222,6 +225,8 @@ button {
   font-size: 14px;
 }
 .answer-text {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
   font-family: "Museo Slab", "Roboto Slab", serif;
   color: var(--navy);
   font-size: clamp(28px, 3vw, 48px);
