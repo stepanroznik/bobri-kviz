@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref, shallowRef, watch } from 'vue';
 import { api } from '../api';
 import { createId, createQuestion, createRound, createTopic } from '../quiz';
+import { moveQuestion, moveTopic } from '../quizEditing';
 import type { Media, Quiz, Question, Round, Topic } from '../types';
 
 const props = defineProps<{ quiz: Quiz; adminKey: string }>();
@@ -12,6 +13,71 @@ const saved = ref(false);
 const dirty = ref(false);
 const expandedRounds = ref<Set<number>>(new Set());
 const expandedQuestions = ref<Set<string>>(new Set());
+
+type MoveRequest =
+  | { kind: 'topic'; round: Round; topic: Topic }
+  | { kind: 'question'; round: Round; topic: Topic; question: Question };
+
+const moveDialog = ref<HTMLDialogElement | null>(null);
+const moveRequest = shallowRef<MoveRequest | null>(null);
+const destinationRoundIndex = ref('');
+const destinationTopicIndex = ref('');
+const moveError = ref('');
+const moveNotice = ref('');
+const destinationRounds = computed(() => props.quiz.rounds
+  .map((round, index) => ({ round, index }))
+  .filter(({ round }) => moveRequest.value?.kind !== 'topic' || round !== moveRequest.value.round));
+const destinationRound = computed(() => destinationRoundIndex.value === ''
+  ? undefined
+  : props.quiz.rounds[Number(destinationRoundIndex.value)]);
+const destinationTopics = computed(() => (destinationRound.value?.topics ?? [])
+  .map((topic, index) => ({ topic, index }))
+  .filter(({ topic }) => topic !== moveRequest.value?.topic));
+const destinationTopic = computed(() => destinationTopicIndex.value === ''
+  ? undefined
+  : destinationRound.value?.topics[Number(destinationTopicIndex.value)]);
+const canMove = computed(() => Boolean(moveRequest.value && destinationRound.value && (moveRequest.value.kind === 'topic'
+  ? destinationRound.value !== moveRequest.value.round
+  : destinationTopic.value && destinationTopic.value !== moveRequest.value?.topic)));
+
+watch(destinationRoundIndex, () => {
+  destinationTopicIndex.value = destinationTopics.value[0]?.index.toString() ?? '';
+  moveError.value = '';
+});
+
+async function openMove(request: MoveRequest): Promise<void> {
+  moveRequest.value = request;
+  const firstRound = request.kind === 'topic'
+    ? destinationRounds.value[0]
+    : destinationRounds.value.find(({ round }) => round.topics.some((topic) => topic !== request.topic)) ?? destinationRounds.value[0];
+  destinationRoundIndex.value = firstRound?.index.toString() ?? '';
+  destinationTopicIndex.value = destinationTopics.value[0]?.index.toString() ?? '';
+  moveError.value = '';
+  await nextTick();
+  moveDialog.value?.showModal();
+}
+
+function confirmMove(): void {
+  const request = moveRequest.value;
+  const targetRound = destinationRound.value;
+  if (!request || !targetRound || !canMove.value) return;
+  const targetTopic = destinationTopic.value;
+  const moved = request.kind === 'topic'
+    ? moveTopic(props.quiz, request.topic, targetRound)
+    : Boolean(targetTopic && moveQuestion(props.quiz, request.question, targetTopic));
+  if (!moved) {
+    moveError.value = 'Přesun se nepodařil. Vyberte prosím znovu cíl.';
+    return;
+  }
+
+  expandedRounds.value = new Set([...expandedRounds.value, Number(destinationRoundIndex.value)]);
+  if (request.kind === 'question') expandedQuestions.value = new Set([...expandedQuestions.value, request.question.id]);
+  markDirty();
+  moveNotice.value = request.kind === 'topic'
+    ? `Téma „${request.topic.title || 'Bez názvu'}“ přesunuto do kola „${targetRound.title}“. Změny potvrďte tlačítkem Uložit.`
+    : `Otázka přesunuta do „${targetRound.title} / ${targetTopic?.title}“. Změny potvrďte tlačítkem Uložit.`;
+  moveDialog.value?.close();
+}
 
 const totalQuestions = computed(() => props.quiz.rounds.reduce((sum, round) => sum + questionCount(round), 0));
 const questionCount = (round: Round): number => round.topics.reduce((sum, topic) => sum + topic.questions.length, 0);
@@ -26,6 +92,7 @@ const roundTopicsLabel = (round: Round): string => round.topics.map((topic) => t
 const boardMinWidth = (round: Round): string => `${Math.max(1, round.topics.length) * 340 + Math.max(0, round.topics.length - 1) * 10}px`;
 
 function markDirty(): void {
+  moveNotice.value = '';
   saved.value = false;
   dirty.value = true;
   emit('dirty', true);
@@ -159,6 +226,7 @@ async function save(): Promise<void> {
   try {
     await api('/api/admin/quiz', { method: 'POST', headers: { 'X-Admin-Key': props.adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify(props.quiz) });
     dirty.value = false;
+    moveNotice.value = '';
     emit('dirty', false);
     saved.value = true;
     window.setTimeout(() => { saved.value = false; saving.value = false; }, 900);
@@ -205,6 +273,8 @@ async function save(): Promise<void> {
         </div>
       </div>
 
+      <p v-if="moveNotice" class="move-notice" role="status">{{ moveNotice }}</p>
+
       <section v-for="(round, roundIndex) in quiz.rounds" :key="roundIndex" class="round-card" :class="{ 'round-card--open': isRoundOpen(roundIndex) }">
         <header class="round-head">
           <button class="round-toggle" type="button" :aria-expanded="isRoundOpen(roundIndex)" :aria-controls="`round-panel-${roundIndex}`" @click="toggleRound(roundIndex)">
@@ -235,6 +305,7 @@ async function save(): Promise<void> {
                 <div class="field"><label :for="`topic-title-${roundIndex}-${topicIndex}`">Název tématu</label><input :id="`topic-title-${roundIndex}-${topicIndex}`" v-model="topic.title" @input="markDirty" /></div>
                 <div class="field"><label :for="`topic-subtitle-${roundIndex}-${topicIndex}`">Podtitulek</label><input :id="`topic-subtitle-${roundIndex}-${topicIndex}`" v-model="topic.subtitle" @input="markDirty" /></div>
                 <div class="topic-actions">
+                  <button class="text-btn" type="button" @click="openMove({ kind: 'topic', round, topic })">Přesunout téma…</button>
                   <button class="text-btn text-btn--danger" type="button" @click="removeTopic(round, topicIndex)">Odebrat téma</button>
                 </div>
               </section>
@@ -275,7 +346,10 @@ async function save(): Promise<void> {
                           </div>
                         </div>
                       </details>
-                      <div class="question-footer"><button class="text-btn text-btn--danger" type="button" @click="removeQuestion(round.topics[topicIndex], rowIndex)">Odebrat otázku</button></div>
+                      <div class="question-footer">
+                        <button class="text-btn" type="button" @click="openMove({ kind: 'question', round, topic: round.topics[topicIndex], question })">Přesunout otázku…</button>
+                        <button class="text-btn text-btn--danger" type="button" @click="removeQuestion(round.topics[topicIndex], rowIndex)">Odebrat otázku</button>
+                      </div>
                     </div>
                   </article>
                   <button v-else class="question-card question-card--empty" type="button" @click="addQuestion(round.topics[topicIndex])">+ Přidat otázku {{ rowIndex + 1 }}</button>
@@ -291,5 +365,36 @@ async function save(): Promise<void> {
 
       <button class="add-round-btn" type="button" @click="addRound">+ Přidat kolo</button>
     </main>
+
+    <dialog ref="moveDialog" class="move-dialog" aria-labelledby="move-title" @close="moveRequest = null">
+      <form v-if="moveRequest" @submit.prevent="confirmMove">
+        <header class="move-dialog__header">
+          <h2 id="move-title">{{ moveRequest.kind === 'topic' ? 'Přesunout téma' : 'Přesunout otázku' }}</h2>
+          <button class="text-btn move-dialog__close" type="button" aria-label="Zavřít" @click="moveDialog?.close()">×</button>
+        </header>
+        <p class="move-dialog__preview">{{ moveRequest.kind === 'topic' ? moveRequest.topic.title : moveRequest.question.prompt || 'Otázka bez zadání' }}</p>
+        <p class="tiny">Z: {{ moveRequest.round.title }} / {{ moveRequest.topic.title }}</p>
+        <div class="field">
+          <label for="move-round">Cílové kolo</label>
+          <select id="move-round" v-model="destinationRoundIndex" autofocus>
+            <option v-if="!destinationRounds.length" value="">Nejprve přidejte další kolo</option>
+            <option v-for="{ round, index } in destinationRounds" :key="index" :value="String(index)">{{ index + 1 }}. {{ round.title || 'Kolo bez názvu' }}</option>
+          </select>
+        </div>
+        <div v-if="moveRequest.kind === 'question'" class="field">
+          <label for="move-topic">Cílové téma</label>
+          <select id="move-topic" v-model="destinationTopicIndex" :disabled="!destinationTopics.length">
+            <option v-if="!destinationTopics.length" value="">V tomto kole není jiné téma</option>
+            <option v-for="{ topic, index } in destinationTopics" :key="index" :value="String(index)">{{ index + 1 }}. {{ topic.title || 'Téma bez názvu' }}</option>
+          </select>
+        </div>
+        <p class="tiny">{{ moveRequest.kind === 'topic' ? 'Celé téma včetně otázek se zařadí na konec cílového kola.' : 'Otázka včetně médií a zdrojů se zařadí na konec cílového tématu.' }}</p>
+        <p v-if="moveError" class="admin-error" role="alert">{{ moveError }}</p>
+        <footer class="move-dialog__actions">
+          <button class="btn btn-secondary" type="button" @click="moveDialog?.close()">Zrušit</button>
+          <button class="btn btn-primary" type="submit" :disabled="!canMove">Přesunout</button>
+        </footer>
+      </form>
+    </dialog>
   </div>
 </template>

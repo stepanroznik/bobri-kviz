@@ -7,6 +7,8 @@ Jednoduchá webová aplikace se dvěma režimy:
 
 Struktura je volná: kola, témata i otázky lze v administraci přidávat a odebírat. Doporučená šablona je **2 témata × 5 otázek = 10 otázek na kolo**; administrace odlišnou strukturu pouze barevně označí. Každé téma má vlastní titulní slide a zobrazují se všechny otázky s vyplněným zadáním. Starší příznaky `enabled` se při přehrávání ignorují. Na konci každého kola je samostatný 60s odpočet pro odevzdání odpovědních lístků.
 
+Zalomení řádků v zadání otázky se zachovají také v prezentaci. V adminu tlačítko **Přesunout téma…** přemístí celé téma do jiného kola a **Přesunout otázku…** v rozbalené otázce nabídne cílové kolo a téma. Položka se zařadí na konec cíle včetně médií a zdrojů; přesun potvrdíte tlačítkem **Uložit**.
+
 ## Hosting
 
 Projekt je připravený pro **Cloudflare Pages + Pages Functions + D1**. Není potřeba Node server ani placený disk.

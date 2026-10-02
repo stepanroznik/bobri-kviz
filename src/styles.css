@@ -139,6 +139,8 @@ button {
   text-align: center;
 }
 .question-text {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
   font-size: clamp(28px, 3vw, 48px);
   line-height: 1.25;
   color: #4d6480;

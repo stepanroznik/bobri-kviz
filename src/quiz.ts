@@ -68,6 +68,11 @@ export function activeQuestionCount(topic: Topic): number {
   return topic.questions.filter((question) => question.prompt.trim()).length;
 }
 
+/** Normalizes pasted line endings for display without changing the stored text. */
+export function formatQuestionPrompt(prompt: string): string {
+  return prompt.replace(/\r\n|[\r\v\f\u0085\u2028\u2029]/g, '\n');
+}
+
 export function mediaUrl(media: Question['media']): string {
   if (!media) return '';
   return media.kind === 'stored' ? `/api/media/${encodeURIComponent(media.id ?? '')}` : (media.url ?? '');
